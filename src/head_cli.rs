@@ -1,9 +1,9 @@
 use clap::Parser;
 use std::error::Error;
 use std::fs::File;
-use std::i64;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::PathBuf;
+use std::usize;
 
 type HeadrResult = Result<(), Box<dyn Error>>;
 
@@ -29,7 +29,7 @@ pub struct HeadCli {
         short = 'c',
         help = "print the first NUM bytes of each file; with the leading '-', print all but the last NUM bytes of each file"
     )]
-    number_of_bytes: Option<i64>,
+    number_of_bytes: Option<i8>,
     #[arg(
         name = "files",
         help = "Path to files : with no FILE, or when FILE is -, read standard input"
@@ -59,18 +59,22 @@ impl HeadCli {
                 result.push_str(title.as_str());
             }
             let of = File::open(file).expect("Error opening file");
-            let buf = BufReader::new(of);
+            let mut buf = BufReader::new(of);
+
+            if let Some(bytes) = self.number_of_bytes {
+                return self.print_bytes(buf, bytes);
+            }
 
             let limit: i64 = if self.number_of_lines.is_negative() {
-                let count = BufReader::new(File::open(file).expect("Failed to count line"))
-                    .lines()
-                    .count() as i64;
+                let count = (&mut buf).lines().count() as i64;
+                buf.rewind()?;
                 count - self.number_of_lines.abs()
             } else {
                 self.number_of_lines
             };
 
             for (k, line) in buf.lines().enumerate() {
+                dbg!(k);
                 if k as i64 >= limit {
                     break;
                 }
@@ -87,8 +91,14 @@ impl HeadCli {
     }
 
     fn print_from_stdin(&self) -> HeadrResult {
-        let mut lines = BufReader::new(std::io::stdin()).lines();
+        let buf = BufReader::new(std::io::stdin());
+        if let Some(bytes) = self.number_of_bytes {
+            return self.print_bytes_stdin(buf, bytes);
+        }
+
+        let mut lines = buf.lines();
         let mut counter = 0;
+
         loop {
             if counter >= self.number_of_lines.abs() {
                 break;
@@ -101,5 +111,36 @@ impl HeadCli {
         }
 
         Ok(())
+    }
+
+    fn print_bytes_stdin<T: Read>(&self, buf: BufReader<T>, bytes: i8) -> HeadrResult {
+        let size: usize = if bytes.is_negative() {
+            bytes.abs().try_into().unwrap()
+        } else {
+            bytes as usize
+        };
+        let mut handle = buf.take(size as u64);
+        let mut buffer = vec![0u8; size];
+        handle.read_exact(&mut buffer)?;
+        print!("{}", String::from_utf8_lossy(&mut buffer));
+
+        return Ok(());
+    }
+
+    fn print_bytes<T: Read + Seek>(&self, mut buf: BufReader<T>, bytes: i8) -> HeadrResult {
+        let ubytes: usize = bytes.abs().try_into().unwrap();
+        let size: usize = if bytes.is_negative() {
+            let total_bytes_count: usize = (&mut buf).bytes().count();
+            buf.rewind()?;
+            total_bytes_count - ubytes
+        } else {
+            bytes as usize
+        };
+        let mut handle = buf.take(size as u64);
+        let mut buffer = vec![0u8; size];
+        handle.read_exact(&mut buffer)?;
+        print!("{}", String::from_utf8_lossy(&mut buffer));
+
+        return Ok(());
     }
 }

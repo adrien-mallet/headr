@@ -30,6 +30,20 @@ fn n_5_end_test() {
     run_test(output, &["-n-5", resource])
 }
 
+#[test]
+fn c_6_test() {
+    let output = "tests/expected/c_6.output";
+    let resource = "tests/resources/lipsum";
+    run_test(output, &["-c", "6", resource])
+}
+
+#[test]
+fn c_2_end_test() {
+    let output = "tests/expected/c_-6.output";
+    let resource = "tests/resources/lipsum";
+    run_test(output, &["-c-6", resource])
+}
+
 fn run_test(expected: &str, args: &[&str]) {
     let mut cmd = Command::cargo_bin("headr").unwrap();
     let stdout = cmd.args(args).output().expect("Headr output error").stdout;
